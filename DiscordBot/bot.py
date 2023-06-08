@@ -8,6 +8,7 @@ import re
 import requests
 from report import Report
 import pdb
+from GPT import * 
 
 # Set up logging to the console
 logger = logging.getLogger('discord')
@@ -98,6 +99,11 @@ class ModBot(discord.Client):
         if self.reports[author_id].report_complete():
             mod_channel = self.mod_channels[self.reports[author_id].message.guild.id]
             await mod_channel.send(self.reports[author_id].generate_summary())
+        
+            # Delete the reported message if asked by the user 
+            if self.reports[author_id].delete:
+                await self.reports[author_id].message.delete()
+
             self.reports.pop(author_id)
 
     async def handle_channel_message(self, message):
@@ -107,9 +113,14 @@ class ModBot(discord.Client):
 
         # Forward the message to the mod channel
         mod_channel = self.mod_channels[message.guild.id]
+        await mod_channel.send("====================================================")
         await mod_channel.send(f'Forwarded message:\n{message.author.name}: "{message.content}"')
-        scores = self.eval_text(message.content)
+        scores, delete = self.eval_text(message)
         await mod_channel.send(self.code_format(scores))
+        if delete: 
+            await message.delete() 
+            alertText = "The message has been deleted because it was found to be offensive. If you believe this was a mistake, please contact a moderator."
+            await message.channel.send(alertText)
 
     
     def eval_text(self, message):
@@ -117,7 +128,20 @@ class ModBot(discord.Client):
         TODO: Once you know how you want to evaluate messages in your channel, 
         insert your code here! This will primarily be used in Milestone 3. 
         '''
-        return message
+        type = classify_type(message.content) 
+        immediate = None 
+        target = None
+        if type == "threats" or type == "doxxing":
+            immediate = classify_immediate(message.content) 
+            target = classify_target(message.content) 
+        reply = "Our automated system has analyzed the report and found the following:\n" 
+        reply += "Type: " + type + "\n" 
+        reply += "Immediate: " + str(immediate if immediate is not None else "N/A") + "\n" 
+        reply += "Target: " + str(target if target is not None else "N/A") + "\n" 
+        delete = False 
+        if type != 'non-offensive':
+            delete = True 
+        return reply, delete 
 
     
     def code_format(self, text):
@@ -126,7 +150,7 @@ class ModBot(discord.Client):
         evaluated, insert your code here for formatting the string to be 
         shown in the mod channel. 
         '''
-        return "Evaluated: '" + text+ "'"
+        return text 
 
 
 client = ModBot()
